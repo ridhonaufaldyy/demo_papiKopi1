@@ -1,5 +1,5 @@
 import { loginWithEmailPassword } from '@/lib/auth-utils';
-import { Link, useRouter } from 'expo-router';
+import { Link } from 'expo-router';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +15,6 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   const handleLogin = async () => {
     if (!email.trim() || !password.trim()) {
@@ -25,104 +24,59 @@ export default function LoginScreen() {
 
     try {
       setLoading(true);
-      
-      // Login dan dapatkan user data dengan role
-      const userData = await loginWithEmailPassword(email, password);
-      
-      Alert.alert('Sukses', `Login berhasil! Role: ${userData.role}`);
-      
-      // Navigasi berdasarkan role
-      if (userData.role === 'admin') {
-        router.replace('/(admin)/dashboard'); // Ganti dengan route admin Anda
-      } else {
-        router.replace('/(user)/dashboard'); // Ganti dengan route user Anda
-      }
-      
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : 'Terjadi error saat login';
-      Alert.alert('Error', errorMessage);
+
+      // LOGIN AUTH SAJA
+      await loginWithEmailPassword(email, password);
+
+      // REDIRECT DIHANDLE AuthContext
+
+    } catch (error: any) {
+      Alert.alert('Login Error', error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView className="flex-1 bg-gradient-to-b from-blue-50 to-white">
-      <View className="px-6 pt-16 pb-8">
-        {/* Header */}
-        <View className="mb-12">
-          <Text className="text-4xl font-bold text-center text-blue-600 mb-2">
-            Selamat Datang
-          </Text>
-          <Text className="text-center text-gray-600 text-base">
-            Masuk ke akun Anda
-          </Text>
-        </View>
+    <ScrollView className="flex-1 bg-white">
+      <View className="px-6 pt-16">
 
-        {/* Form Container */}
-        <View className="bg-white rounded-2xl p-6 shadow-lg mb-6">
-          {/* Email Input */}
-          <View className="mb-5">
-            <Text className="text-gray-700 font-semibold mb-2">Email</Text>
-            <TextInput
-              placeholder="Masukkan email Anda"
-              value={email}
-              onChangeText={setEmail}
-              editable={!loading}
-              placeholderTextColor="#999"
-              className="border-2 border-gray-300 rounded-lg px-4 py-3 text-base"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-          </View>
+        <Text className="text-3xl font-bold text-center mb-10">
+          Login
+        </Text>
 
-          {/* Password Input */}
-          <View className="mb-5">
-            <Text className="text-gray-700 font-semibold mb-2">Password</Text>
-            <TextInput
-              placeholder="Masukkan password"
-              value={password}
-              onChangeText={setPassword}
-              editable={!loading}
-              placeholderTextColor="#999"
-              className="border-2 border-gray-300 rounded-lg px-4 py-3 text-base"
-              secureTextEntry
-            />
-          </View>
+        <TextInput
+          placeholder="Email"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          className="border rounded-lg p-3 mb-4"
+        />
 
-          {/* Login Button */}
-          <TouchableOpacity
-            onPress={handleLogin}
-            disabled={loading}
-            className={`rounded-lg py-3 flex-row justify-center items-center ${
-              loading ? 'bg-gray-400' : 'bg-blue-600'
-            }`}
-          >
-            {loading ? (
-              <ActivityIndicator color="white" size="small" />
-            ) : (
-              <Text className="text-white font-bold text-lg">Login</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <TextInput
+          placeholder="Password"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          className="border rounded-lg p-3 mb-6"
+        />
 
-        {/* Toggle to Register */}
-        <View className="flex-row justify-center items-center">
-          <Text className="text-gray-600">Belum punya akun? </Text>
-          <Link href="/register" asChild>
-            <TouchableOpacity disabled={loading}>
-              <Text className="text-blue-600 font-bold text-base">Daftar</Text>
-            </TouchableOpacity>
-          </Link>
-        </View>
+        <TouchableOpacity
+          onPress={handleLogin}
+          disabled={loading}
+          className="bg-blue-600 rounded-lg py-3"
+        >
+          {loading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text className="text-white text-center font-bold">Login</Text>
+          )}
+        </TouchableOpacity>
 
-        {/* Info Box */}
-        {/* <View className="mt-12 bg-blue-50 border-2 border-blue-200 rounded-2xl p-4">
-          <Text className="text-gray-700 text-xs text-center">
-            💡 Tip: Gunakan email dan password apapun untuk testing
-          </Text>
-        </View> */}
+        <Link href="/(auth)/register" className="text-center mt-6 text-blue-600">
+          Daftar
+        </Link>
+
       </View>
     </ScrollView>
   );
