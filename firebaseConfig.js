@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { initializeAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAbPbiQN4g86ZkzvxbMpkBqkMhWsB4nTlI",
@@ -18,3 +19,5 @@ export const auth = initializeAuth(app);
 
 // Firestore untuk menyimpan user profile & role
 export const db = getFirestore(app);
+
+export const storage = getStorage(app);

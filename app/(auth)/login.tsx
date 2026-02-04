@@ -32,7 +32,7 @@ export default function LoginScreen() {
       
       // 2. Navigasi Sederhana
       // Langsung ke satu rute pusat. Dashboard yang akan handle sisanya.
-      router.replace('/(tabs)');
+      router.replace('/dashboard');
       
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Login gagal';

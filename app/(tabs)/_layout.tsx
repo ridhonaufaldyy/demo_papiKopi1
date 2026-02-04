@@ -15,38 +15,21 @@ export default function TabsLayout() {
     );
   }
 
-  // Tentukan warna tema berdasarkan Role
+  // Warna aktif berdasarkan role (Merah untuk Admin, Biru untuk User)
   const themeColor = userData?.role === 'admin' ? '#ef4444' : '#2563eb';
 
-  return (
-    <Tabs
-      screenOptions={{
-        headerShown: false, // Kita pakai header custom di tiap halaman
-        tabBarActiveTintColor: themeColor,
-        tabBarInactiveTintColor: '#9ca3af',
-        tabBarStyle: {
-          borderTopWidth: 0,
-          elevation: 5,
-          height: 60,
-          paddingBottom: 10,
-          paddingTop: 10,
-        },
-        tabBarLabelStyle: {
-          fontSize: 12,
-          fontWeight: '600',
-        },
-      }}
-    >
-      {/* Tab 1: Home (Dashboard) */}
+return (
+    <Tabs screenOptions={{ headerShown: false, /* ...style lainnya */ }}>
+      
+      {/* Pastikan name="dashboard" sesuai dengan nama file dashboard.tsx */}
       <Tabs.Screen
-        name="index"
+        name="dashboard" 
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => <Feather name="home" size={24} color={color} />,
         }}
       />
 
-      {/* Tab 2: Profile */}
       <Tabs.Screen
         name="profile"
         options={{
@@ -54,6 +37,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color }) => <Feather name="user" size={24} color={color} />,
         }}
       />
+
     </Tabs>
   );
 }
