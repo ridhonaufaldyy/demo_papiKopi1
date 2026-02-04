@@ -16,14 +16,11 @@ export interface UserData {
  */
 export async function loginWithEmailPassword(email: string, password: string): Promise<UserData> {
   try {
-    console.log('TRY LOGIN:', email);
-
+    // Login dengan Firebase Auth
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
-
-    console.log('AUTH SUCCESS UID:', userCredential.user.uid);
-
     const user = userCredential.user;
 
+    // Ambil data user dari Firestore
     const userDocRef = doc(db, 'users', user.uid);
     const userDocSnap = await getDoc(userDocRef);
 
@@ -32,20 +29,14 @@ export async function loginWithEmailPassword(email: string, password: string): P
     }
 
     const userData = userDocSnap.data() as UserData;
-
+    
     return {
       email: userData.email || user.email || '',
-      role: userData.role || 'user',
+      role: userData.role || 'user', // Default ke 'user' jika role tidak ada
       name: userData.name,
       createdAt: userData.createdAt,
     };
-  } catch (error: any) {
-    console.log('========== LOGIN ERROR ==========');
-    console.log('CODE:', error?.code);
-    console.log('MESSAGE:', error?.message);
-    console.log('FULL:', JSON.stringify(error, null, 2));
-    console.log('================================');
-
+  } catch (error) {
     throw error;
   }
 }
