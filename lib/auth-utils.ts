@@ -1,67 +1,109 @@
 import { auth, db } from '@/lib/firebase';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut
+} from 'firebase/auth';
+import {
+  doc,
+  getDoc,
+  serverTimestamp,
+  setDoc,
+  Timestamp
+} from 'firebase/firestore';
+
+// ==========================================
+// Types & Interfaces
+// ==========================================
 
 export type UserRole = 'user' | 'admin';
 
 export interface UserData {
+  uid?: string; // Berguna untuk referensi ID di UI
   email: string;
   role: UserRole;
   name?: string;
-  createdAt?: string;
+  createdAt?: Timestamp | string | null;
 }
 
+// ==========================================
+// Auth Services
+// ==========================================
+
 /**
- * Login user dan ambil role dari Firestore
+ * Service untuk Mendaftar User Baru
+ * Menangani Auth Firebase + Simpan data ke Firestore
  */
-export async function loginWithEmailPassword(email: string, password: string): Promise<UserData> {
+export async function registerUser(name: string, email: string, pass: string): Promise<UserData> {
   try {
-    // Login dengan Firebase Auth
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    // 1. Create User di Authentication
+    const userCredential = await createUserWithEmailAndPassword(auth, email, pass);
     const user = userCredential.user;
 
-    // Ambil data user dari Firestore
-    const userDocRef = doc(db, 'users', user.uid);
-    const userDocSnap = await getDoc(userDocRef);
-
-    if (!userDocSnap.exists()) {
-      throw new Error('User data tidak ditemukan di database');
-    }
-
-    const userData = userDocSnap.data() as UserData;
-    
-    return {
-      email: userData.email || user.email || '',
-      role: userData.role || 'user', // Default ke 'user' jika role tidak ada
-      name: userData.name,
-      createdAt: userData.createdAt,
+    // 2. Siapkan data user
+    const newUser: UserData = {
+      uid: user.uid,
+      name,
+      email,
+      role: 'user', // Default role
+      createdAt: null, // Placeholder untuk timestamp client-side
     };
+
+    // 3. Simpan ke Firestore
+    await setDoc(doc(db, 'users', user.uid), {
+      ...newUser,
+      createdAt: serverTimestamp(), // Gunakan server timestamp
+    });
+
+    return newUser;
   } catch (error) {
+    console.error('Registration Error:', error);
     throw error;
   }
 }
 
 /**
- * Get role dari user yang sedang login
+ * Service untuk Login
+ * Melakukan login auth dan langsung mengambil data profil dari Firestore
  */
-export async function getUserRole(userId: string): Promise<UserRole> {
+export async function loginWithEmailPassword(email: string, password: string): Promise<UserData> {
   try {
-    const userDocRef = doc(db, 'users', userId);
-    const userDocSnap = await getDoc(userDocRef);
+    // 1. Login Auth
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const user = userCredential.user;
 
-    if (!userDocSnap.exists()) {
-      return 'user'; // Default role
+    // 2. Ambil data profil lengkap (Reusing function biar DRY)
+    const userData = await getUserData(user.uid);
+
+    if (!userData) {
+      throw new Error('Data user tidak ditemukan di database.');
     }
 
-    return userDocSnap.data().role || 'user';
+    return userData;
   } catch (error) {
-    console.error('Error getting user role:', error);
-    return 'user'; // Default role jika ada error
+    console.error('Login Error:', error);
+    throw error;
   }
 }
 
 /**
- * Get user data lengkap
+ * Service untuk Logout
+ */
+export async function logoutUser(): Promise<void> {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error('Logout Error:', error);
+    throw error;
+  }
+}
+
+// ==========================================
+// Data Services
+// ==========================================
+
+/**
+ * Mengambil data user lengkap dari Firestore berdasarkan UID
  */
 export async function getUserData(userId: string): Promise<UserData | null> {
   try {
@@ -72,9 +114,25 @@ export async function getUserData(userId: string): Promise<UserData | null> {
       return null;
     }
 
-    return userDocSnap.data() as UserData;
+    const data = userDocSnap.data();
+    
+    return {
+      uid: userId,
+      email: data.email,
+      role: data.role || 'user',
+      name: data.name,
+      createdAt: data.createdAt,
+    } as UserData;
   } catch (error) {
-    console.error('Error getting user data:', error);
+    console.error('Get User Data Error:', error);
     return null;
   }
+}
+
+/**
+ * Helper cepat untuk cek role (biasanya untuk route protection)
+ */
+export async function getUserRole(userId: string): Promise<UserRole> {
+  const userData = await getUserData(userId);
+  return userData?.role || 'user';
 }
