@@ -2,18 +2,18 @@ import { Link, useRouter } from "expo-router";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, serverTimestamp, setDoc } from "firebase/firestore";
 import React, { useState } from "react";
-import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { useNotification } from '../components/ui/NotificationContainer';
 
 import { auth, db } from "@/lib/firebase";
-// Import komponen reusable (Pastikan file ini sudah dibuat sesuai langkah sebelumnya)
 import { Button } from "../components/ui/Button";
 import { Input } from "../components/ui/Input";
 
 export default function RegisterScreen() {
   const router = useRouter();
+  const notification = useNotification();
   const [loading, setLoading] = useState(false);
 
-  // 1. Menggunakan Single State Object (Lebih rapi daripada banyak useState)
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -21,24 +21,25 @@ export default function RegisterScreen() {
     confirmPassword: "",
   });
 
-  // Helper function untuk update state dinamis
   const handleChange = (key: keyof typeof form, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleRegister = async () => {
-    // Destructuring untuk kemudahan akses
     const { name, email, password, confirmPassword } = form;
 
     // Validasi Dasar
     if (!name.trim() || !email.trim() || !password.trim()) {
-      return Alert.alert("Validasi", "Semua data wajib diisi.");
+      notification.warning("Semua data wajib diisi");
+      return;
     }
     if (password !== confirmPassword) {
-      return Alert.alert("Validasi", "Password dan konfirmasi tidak cocok.");
+      notification.error("Password dan konfirmasi tidak cocok");
+      return;
     }
     if (password.length < 6) {
-      return Alert.alert("Validasi", "Password minimal 6 karakter.");
+      notification.error("Password minimal 6 karakter");
+      return;
     }
 
     try {
@@ -49,8 +50,6 @@ export default function RegisterScreen() {
       const uid = userCredential.user.uid;
 
       // 2. Simpan Data ke Firestore
-      // Tips: Logic ini idealnya dipisah ke file terpisah (misal: lib/auth-service.ts)
-      // tapi untuk sekarang kita simpan disini agar konteks tetap jelas.
       await setDoc(doc(db, "users", uid), {
         name,
         email,
@@ -58,12 +57,12 @@ export default function RegisterScreen() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert("Sukses", "Akun berhasil dibuat! Silakan login.");
+      notification.success("Akun berhasil dibuat!");
       router.replace("/(auth)/login");
 
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Gagal mendaftar";
-      Alert.alert("Error", msg);
+      notification.error(msg);
     } finally {
       setLoading(false);
     }
@@ -83,7 +82,7 @@ export default function RegisterScreen() {
           </Text>
         </View>
 
-        {/* Form Section - Bersih & Mudah Dibaca */}
+        {/* Form Section */}
         <View className="mb-6">
           <Input
             label="Nama Lengkap"
@@ -116,7 +115,6 @@ export default function RegisterScreen() {
             value={form.confirmPassword}
             onChangeText={(text) => handleChange("confirmPassword", text)}
             secureTextEntry
-            // Opsional: Berikan visual error jika tidak cocok saat mengetik
             error={
               form.confirmPassword && form.password !== form.confirmPassword 
                 ? "Password tidak cocok" 

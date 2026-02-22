@@ -31,6 +31,87 @@ const isValidCoordinate = (lat: number, lng: number) =>
   lng >= 95 &&
   lng <= 141;
 
+// ✅ PERBAIKAN: Helper untuk extract tanggal dari berbagai format timestamp
+const getDateFromTimestamp = (t: any): Date | null => {
+  try {
+    if (t.timestamp?.seconds) {
+      return new Date(t.timestamp.seconds * 1000);
+    }
+    if (t.timestamp?.toDate && typeof t.timestamp.toDate === 'function') {
+      return t.timestamp.toDate();
+    }
+    if (typeof t.timestamp === 'string') {
+      return new Date(t.timestamp);
+    }
+    if (t.timestamp instanceof Date) {
+      return t.timestamp;
+    }
+    if (typeof t.timestamp === 'number') {
+      return new Date(t.timestamp);
+    }
+    if (t.date) {
+      return new Date(t.date);
+    }
+    if (t.createdAt) {
+      return getDateFromTimestamp({ timestamp: t.createdAt });
+    }
+    return null;
+  } catch (err) {
+    console.warn('Error parsing timestamp:', err, t);
+    return null;
+  }
+};
+
+// ✅ PERBAIKAN: Helper untuk extract lokasi dari berbagai format
+const getLocationFromTransaction = (t: any): { latitude: number; longitude: number } | null => {
+  try {
+    // Format 1: location.latitude & location.longitude
+    if (t.location?.latitude !== undefined && t.location?.longitude !== undefined) {
+      return { 
+        latitude: t.location.latitude, 
+        longitude: t.location.longitude 
+      };
+    }
+    
+    // Format 2: location.lat & location.lng
+    if (t.location?.lat !== undefined && t.location?.lng !== undefined) {
+      return { 
+        latitude: t.location.lat, 
+        longitude: t.location.lng 
+      };
+    }
+    
+    // Format 3: coordinates array
+    if (Array.isArray(t.location?.coordinates) && t.location.coordinates.length === 2) {
+      return { 
+        latitude: t.location.coordinates[1], 
+        longitude: t.location.coordinates[0] 
+      };
+    }
+    
+    // Format 4: GeoPoint
+    if (t.geopoint?.latitude !== undefined && t.geopoint?.longitude !== undefined) {
+      return { 
+        latitude: t.geopoint.latitude, 
+        longitude: t.geopoint.longitude 
+      };
+    }
+    
+    // Format 5: Direct lat/lng
+    if (t.lat !== undefined && t.lng !== undefined) {
+      return { 
+        latitude: t.lat, 
+        longitude: t.lng 
+      };
+    }
+    
+    return null;
+  } catch (err) {
+    console.warn('Error parsing location:', err, t);
+    return null;
+  }
+};
+
 const filterOutliers = (
   data: { lat: number; lng: number; amount: number }[]
 ) => {
@@ -138,20 +219,22 @@ export default function SalesMapScreen() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [html, setHtml] = useState('');
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   const [mode, setMode] =
     useState<'today' | 'week' | 'month' | 'date'>('today');
   const [pickedDate, setPickedDate] = useState(new Date());
   const [showPicker, setShowPicker] = useState(false);
 
-  // Default state layer
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showMarkers, setShowMarkers] = useState(true);
   const [showAnalysis, setShowAnalysis] = useState(true);
+  const [showDebug, setShowDebug] = useState(true);
 
   /* ===== REALTIME LISTENER ===== */
   useEffect(() => {
     const unsub = listenAllTransactions(data => {
+      console.log('📥 Raw transactions received:', data.length);
       setTransactions(data);
       setLoading(false);
     });
@@ -161,19 +244,32 @@ export default function SalesMapScreen() {
   /* ===== FILTER LOGIC ===== */
   const filteredTransactions = useMemo(() => {
     const now = new Date();
+    let debugMessages: string[] = [];
 
-    return transactions.filter(t => {
-      if (!t.timestamp?.seconds) return false;
-      const d = new Date(t.timestamp.seconds * 1000);
+    const filtered = transactions.filter(t => {
+      const d = getDateFromTimestamp(t);
+      
+      if (!d || isNaN(d.getTime())) {
+        debugMessages.push(`❌ Invalid date: ${JSON.stringify(t.timestamp)}`);
+        return false;
+      }
 
       if (mode === 'today') {
-        return d.toDateString() === now.toDateString();
+        const isToday = d.toDateString() === now.toDateString();
+        if (isToday) {
+          debugMessages.push(`✅ Today: ${d.toLocaleDateString()}`);
+        }
+        return isToday;
       }
 
       if (mode === 'week') {
         const w = new Date(now);
         w.setDate(now.getDate() - 7);
-        return d >= w;
+        const isWeek = d >= w;
+        if (isWeek) {
+          debugMessages.push(`✅ Week: ${d.toLocaleDateString()}`);
+        }
+        return isWeek;
       }
 
       if (mode === 'month') {
@@ -188,48 +284,80 @@ export default function SalesMapScreen() {
 
       return true;
     });
+
+    setDebugInfo(`Filtered: ${filtered.length}/${transactions.length}\n${debugMessages.slice(0, 5).join('\n')}`);
+    return filtered;
   }, [transactions, mode, pickedDate]);
 
   /* ===== MAP GENERATION ===== */
   const generateMap = useCallback(() => {
-    const valid = filteredTransactions.filter(
-      t =>
-        t.location &&
-        isValidCoordinate(
-          t.location.latitude,
-          t.location.longitude
-        )
-    );
+    let debugSteps: string[] = [];
 
-    const markers = valid.map(t => ({
-      lat: t.location.latitude,
-      lng: t.location.longitude,
-      amount: t.totalAmount,
-    }));
+    // Step 1: Filter by location
+    const withLocation = filteredTransactions.filter(t => {
+      const loc = getLocationFromTransaction(t);
+      if (!loc) {
+        debugSteps.push(`❌ No location in: ${JSON.stringify(t).substring(0, 50)}`);
+        return false;
+      }
+      return true;
+    });
+    debugSteps.push(`📍 With location: ${withLocation.length}/${filteredTransactions.length}`);
 
-    // Heatmap intensity
+    // Step 2: Validate coordinates
+    const valid = withLocation.filter(t => {
+      const loc = getLocationFromTransaction(t)!;
+      const isValid = isValidCoordinate(loc.latitude, loc.longitude);
+      if (!isValid) {
+        debugSteps.push(`❌ Invalid coord: Lat ${loc.latitude}, Lng ${loc.longitude}`);
+      }
+      return isValid;
+    });
+    debugSteps.push(`✅ Valid coords: ${valid.length}/${withLocation.length}`);
+
+    setDebugInfo(prev => prev + '\n\nMap Generation:\n' + debugSteps.join('\n'));
+
+    const markers = valid.map(t => {
+      const loc = getLocationFromTransaction(t)!;
+      return {
+        lat: loc.latitude,
+        lng: loc.longitude,
+        amount: t.totalAmount,
+      };
+    });
+
+    // ✅ PERBAIKAN: Heatmap gunakan data mentah (valid)
     const heat = valid
-      .map(
-        t =>
-          `[${t.location.latitude},${t.location.longitude},${(t.totalAmount || 1000) / 40000}]`
-      )
+      .map(t => {
+        const loc = getLocationFromTransaction(t)!;
+        return `[${loc.latitude},${loc.longitude},${(t.totalAmount || 1000) / 40000}]`;
+      })
       .join(',');
 
-    const clean = filterOutliers(
-      valid.map(t => ({
-        lat: t.location.latitude,
-        lng: t.location.longitude,
+    // ✅ PERBAIKAN: Analisis gunakan data YANG SAMA (jangan filter outliers dulu)
+    const rawMarkerData = valid.map(t => {
+      const loc = getLocationFromTransaction(t)!;
+      return {
+        lat: loc.latitude,
+        lng: loc.longitude,
         amount: t.totalAmount || 1000,
-      }))
-    );
+      };
+    });
 
-    const tiers = calculateTieredClusters(clean);
+    // ✅ PERBAIKAN: Clustering langsung dari raw data (heatmap dan analisis sama)
+    const tiers = calculateTieredClusters(rawMarkerData);
     
-    // Default center ke Bandung jika data kosong
     const center = tiers[0] || {
       lat: -6.9175,
       lng: 107.6191,
     };
+
+    // ✅ PERBAIKAN: Generate tier info untuk debug
+    const tierInfo = tiers.map(t => 
+      `${t.label}: Rp ${(t.revenue || 0).toLocaleString('id-ID')} (Lat: ${t.lat.toFixed(4)}, Lng: ${t.lng.toFixed(4)})`
+    ).join('\n');
+
+    setDebugInfo(prev => prev + `\n\nAnalisis Tier:\n${tierInfo}`);
 
     setHtml(`
 <!DOCTYPE html>
@@ -241,34 +369,31 @@ export default function SalesMapScreen() {
   body { margin: 0; padding: 0; }
   #map { height: 100vh; width: 100vw; }
   
-  /* --- MODERN RED PIN STYLE --- */
   .red-pin {
     width: 30px;
     height: 30px;
     border-radius: 50% 50% 50% 0;
-    background: #ef4444; /* Merah Modern */
+    background: #ef4444;
     position: absolute;
     transform: rotate(-45deg);
     left: 50%;
     top: 50%;
     margin: -15px 0 0 -15px;
-    box-shadow: -2px 3px 5px rgba(0,0,0,0.3); /* Shadow agar timbul */
+    box-shadow: -2px 3px 5px rgba(0,0,0,0.3);
     border: 1px solid #b91c1c;
   }
   
-  /* Titik Putih di Tengah Pin */
   .red-pin::after {
     content: '';
     width: 10px;
     height: 10px;
-    margin: 8px 0 0 10px; /* Posisi tengah */
+    margin: 8px 0 0 10px;
     background: #fff;
     position: absolute;
     border-radius: 50%;
-    transform: rotate(45deg); /* Counter rotate agar bulat sempurna visualnya */
+    transform: rotate(45deg);
   }
 
-  /* --- ANALYSIS PULSE (Sama seperti sebelumnya tapi dihaluskan) --- */
   .pulse-marker {
     display: flex;
     align-items: center;
@@ -297,26 +422,34 @@ export default function SalesMapScreen() {
 </head>
 <body>
 <div id="map"></div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"><\/script>
 <script>
-  // Init Map
   const map = L.map('map', { zoomControl: false }).setView([${center.lat}, ${center.lng}], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  // 1. HEATMAP LAYER
-  ${showHeatmap ? `L.heatLayer([${heat}], { radius: 35, blur: 25, maxZoom: 15 }).addTo(map);` : ''}
+  // 1. HEATMAP LAYER - DIPERLUAS
+  ${showHeatmap && heat ? `
+    L.heatLayer([${heat}], { 
+      radius: 50,        // ✅ Diperbesar dari 35 menjadi 50
+      blur: 40,          // ✅ Diperbesar dari 25 menjadi 40
+      maxZoom: 13,       // ✅ Turun dari 15, jadi blur lebih luas
+      minOpacity: 0.3,   // ✅ Tambahan: opacity minimum
+      gradient: {0.4: '#3b82f6', 0.65: '#f59e0b', 1.0: '#ef4444'}
+    }).addTo(map);
+    console.log('🔥 Heatmap rendered with ${valid.length} points');
+  ` : ''}
 
-  // 2. MARKERS LAYER (Red Pins)
+  // 2. MARKERS LAYER (Red Pins) - Optional, bisa dihide
   ${showMarkers ? `
     const points = ${JSON.stringify(markers)};
+    console.log('🔴 Drawing', points.length, 'pins');
     points.forEach(m => {
-      // Menggunakan divIcon agar bisa custom CSS total
       const icon = L.divIcon({
-        className: 'custom-div-icon', // Dummy class
+        className: 'custom-div-icon',
         html: "<div class='red-pin'></div>",
         iconSize: [30, 42],
-        iconAnchor: [15, 42] // Anchor di ujung bawah pin
+        iconAnchor: [15, 42]
       });
       
       L.marker([m.lat, m.lng], { icon: icon })
@@ -325,9 +458,10 @@ export default function SalesMapScreen() {
     });
   ` : ''}
 
-  // 3. ANALYSIS LAYER (Pulse)
-  ${showAnalysis ? `
+  // 3. ANALYSIS LAYER (Pulse) - Menunjukkan AREA TERKONSENTRASI
+  ${showAnalysis && tiers.length > 0 ? `
     const tiers = ${JSON.stringify(tiers)};
+    console.log('📊 Rendering', tiers.length, 'tier analysis points');
     tiers.forEach(s => {
       const icon = L.divIcon({
         className: 'pulse-marker',
@@ -335,13 +469,17 @@ export default function SalesMapScreen() {
           <div class="pulse-core" style="background: \${s.color}"></div>
           <div class="pulse-ring" style="background: \${s.color}"></div>
         \`,
-        iconSize: [30, 30],
-        iconAnchor: [15, 15]
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
       });
 
       L.marker([s.lat, s.lng], { icon: icon })
        .addTo(map)
-       .bindPopup('<b style="color:'+s.color+'">' + s.label + '</b><br>Estimasi pendapatan tinggi');
+       .bindPopup(\`
+         <div style="font-weight:bold; color:\${s.color};">\${s.label}</div>
+         <div>Pendapatan: Rp \${s.revenue.toLocaleString('id-ID')}</div>
+         <div style="font-size:12px; margin-top:5px;">Cluster: \${s.tier}</div>
+       \`);
     });
   ` : ''}
 </script>
@@ -493,8 +631,24 @@ export default function SalesMapScreen() {
             icon="analytics"
             color="#10b981"
           />
+          <FilterPill
+            label="Debug"
+            active={showDebug}
+            onPress={() => setShowDebug(!showDebug)}
+            icon="bug"
+            color="#f59e0b"
+          />
         </View>
       </View>
+
+      {/* DEBUG INFO */}
+      {showDebug && (
+        <View className="absolute top-32 right-5 bg-gray-800/90 px-3 py-2 rounded-lg z-20 max-w-xs">
+          <Text className="text-white text-xs font-mono">
+            {debugInfo}
+          </Text>
+        </View>
+      )}
 
       {/* DATE PICKER */}
       {showPicker && (

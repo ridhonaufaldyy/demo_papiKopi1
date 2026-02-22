@@ -1,10 +1,11 @@
 import { useAuth } from '@/lib/auth-context';
 import { UserRole } from '@/lib/auth-utils';
 import { Feather } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import React, { useEffect } from 'react';
-// --- FIX: Tambahkan BackHandler ke import ---
-import { Alert, BackHandler, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import React, { useCallback } from 'react';
+import { BackHandler, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useNotification } from '../components/ui/NotificationContainer';
 
 // Import Components
 import { DashboardGridItem } from '../components/dashboard/DashboardGridItem';
@@ -53,7 +54,7 @@ const ROLE_CONFIG: Record<UserRole, DashboardConfig> = {
       { title: 'Persiapan', icon: 'clipboard', route: '/preparation' },
       { title: 'Mulai Jualan', icon: 'map-pin', route: '/start-selling' },
       { title: 'Top Penjualan', icon: 'award', route: '/leaderboard' },
-      { title: 'Riwayat', icon: 'clock' },
+      { title: 'Riwayat', icon: 'clock', route: '/riwayat' },
     ]
   }
 };
@@ -61,6 +62,7 @@ const ROLE_CONFIG: Record<UserRole, DashboardConfig> = {
 export default function DashboardScreen() {
   const { userData, loading: authLoading, logout } = useAuth();
   const router = useRouter();
+  const notification = useNotification();
 
   // Kita ambil role & config saat ini
   const currentRole = userData?.role || 'user';
@@ -71,58 +73,58 @@ export default function DashboardScreen() {
     if (route) {
       router.push(route as any);
     } else {
-      Alert.alert('Info', 'Fitur ini belum tersedia');
+      notification.info('Fitur ini belum tersedia');
     }
   };
 
-  // --- FUNGSI EKSEKUSI LOGOUT (Dipisahkan agar bisa dipanggil BackHandler & Tombol) ---
-  const performLogout = async () => {
-    await logout();
-    router.replace('/(auth)/login');
-  };
+  // --- FUNGSI EKSEKUSI LOGOUT ---
+  const performLogout = useCallback(async () => {
+    try {
+      await logout();
+      notification.success('Logout berhasil');
+      router.replace('/(auth)/login');
+    } catch (error) {
+      notification.error('Gagal logout');
+      console.error(error);
+    }
+  }, [logout, notification, router]);
 
   // --- TRIGGER TOMBOL LOGOUT (UI) ---
   const handleLogoutPress = () => {
-    Alert.alert('Konfirmasi', 'Keluar aplikasi?', [
-      { text: 'Batal', style: 'cancel' },
-      { text: 'Keluar', style: 'destructive', onPress: performLogout }
-    ]);
+    notification.confirm(
+      'Anda akan keluar dari akun. Lanjutkan?',
+      performLogout,
+      () => {
+        notification.info('Logout dibatalkan');
+      },
+      'Logout?'
+    );
   };
 
-  // --- HANDLE TOMBOL BACK ANDROID ---
-  useEffect(() => {
-    const backAction = () => {
-      Alert.alert(
-        "Konfirmasi Keluar",
-        "Apakah Anda yakin ingin logout dan keluar dari akun?",
-        [
-          {
-            text: "Batal",
-            onPress: () => null,
-            style: "cancel"
-          },
-          {
-            text: "Ya, Keluar",
-            onPress: performLogout, // Panggil fungsi eksekusi langsung
-            style: "destructive"
-          }
-        ]
+  // --- HANDLE TOMBOL BACK ANDROID - HANYA KETIKA DI DASHBOARD UTAMA ---
+  useFocusEffect(
+    useCallback(() => {
+      const backAction = () => {
+        notification.confirm(
+          'Apakah Anda yakin ingin keluar dari akun?',
+          performLogout,
+          () => true,
+          'Konfirmasi Logout'
+        );
+        return true;
+      };
+
+      const backHandler = BackHandler.addEventListener(
+        "hardwareBackPress",
+        backAction
       );
-      return true; // Mencegah aplikasi langsung keluar (default behavior)
-    };
 
-    const backHandler = BackHandler.addEventListener(
-      "hardwareBackPress",
-      backAction
-    );
-
-    return () => backHandler.remove();
-  }, []);
+      return () => backHandler.remove();
+    }, [notification, performLogout])
+  );
 
   // --- FIX: Loading Check diletakkan di awal ---
   if (authLoading) return <View className="flex-1 bg-white" />;
-
-  // --- FIX: HAPUS return (<View><Text>Halaman Utama...</Text></View>) yang memblokir UI ---
 
   return (
     <ScrollView className="flex-1 bg-gray-50" showsVerticalScrollIndicator={false}>

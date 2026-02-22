@@ -1,12 +1,14 @@
 import { loginWithEmailPassword } from '@/lib/auth-utils';
 import { Link, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { Button } from '../components/ui/Button'; // Komponen Reusable
-import { Input } from '../components/ui/Input'; // Komponen Reusable
+import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Button } from '../components/ui/Button';
+import { Input } from '../components/ui/Input';
+import { useNotification } from '../components/ui/NotificationContainer';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const notification = useNotification();
   
   const [form, setForm] = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
@@ -18,7 +20,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!form.email.trim() || !form.password.trim()) {
-      Alert.alert('Validasi', 'Email dan password harus diisi');
+      notification.warning('Email dan password harus diisi');
       return;
     }
 
@@ -26,17 +28,15 @@ export default function LoginScreen() {
       setLoading(true);
       
       // 1. Proses Login
-      // Kita tidak butuh variabel 'userData' lagi di sini untuk if-else route,
-      // karena tujuannya sama.
       await loginWithEmailPassword(form.email, form.password);
       
       // 2. Navigasi Sederhana
-      // Langsung ke satu rute pusat. Dashboard yang akan handle sisanya.
+      notification.success('Login berhasil!');
       router.replace('/dashboard');
       
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Login gagal';
-      Alert.alert('Error', msg);
+      notification.error(msg);
     } finally {
       setLoading(false);
     }
