@@ -1,77 +1,78 @@
-import { getUserData, UserData } from '@/lib/auth-utils';
-import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import {
+  getUserData,
+  loginWithEmailPassword,
+  logoutUser,
+  registerUser,
+  UserData
+} from './auth-utils';
+import { auth } from './firebase';
 
+// Definisi Tipe Context
 interface AuthContextType {
-  user: User | null;
-  userData: UserData | null;
+  user: User | null;          // User Firebase Auth (Raw)
+  userData: UserData | null;  // User Firestore (Data Profil Lengkap)
   loading: boolean;
-  isAdmin: boolean;
-  logout: () => Promise<void>;
+  login: typeof loginWithEmailPassword;
+  register: typeof registerUser;
+  logout: typeof logoutUser;
+  refreshUserData: () => Promise<void>; // <--- FUNGSI BARU KITA
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  userData: null,
-  loading: true,
-  isAdmin: false,
-  logout: async () => {},
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // --- Fungsi untuk Refresh Data Manual ---
+  const refreshUserData = async () => {
+    if (user) {
+      // Ambil data terbaru dari Firestore
+      const updatedData = await getUserData(user.uid);
+      if (updatedData) {
+        setUserData(updatedData); // Update state global
+      }
+    }
+  };
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      try {
+      setLoading(true);
+      if (currentUser) {
         setUser(currentUser);
-        
-        if (currentUser) {
-          // Fetch user data dari Firestore
-          const data = await getUserData(currentUser.uid);
-          setUserData(data);
-        } else {
-          setUserData(null);
-        }
-      } catch (error) {
-        console.error('Error in auth state changed:', error);
-      } finally {
-        setLoading(false);
+        // Ambil data profil dari Firestore
+        const data = await getUserData(currentUser.uid);
+        setUserData(data);
+      } else {
+        setUser(null);
+        setUserData(null);
       }
+      setLoading(false);
     });
 
     return unsubscribe;
   }, []);
 
-  const logout = async () => {
-    try {
-      await auth.signOut();
-      setUser(null);
-      setUserData(null);
-    } catch (error) {
-      console.error('Error logging out:', error);
-      throw error;
-    }
-  };
-
-  const value: AuthContextType = {
-    user,
-    userData,
-    loading,
-    isAdmin: userData?.role === 'admin',
-    logout,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={{ 
+      user, 
+      userData, 
+      loading, 
+      login: loginWithEmailPassword,
+      register: registerUser,
+      logout: logoutUser,
+      refreshUserData // Export fungsi ini agar bisa dipakai
+    }}>
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth harus digunakan dalam AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
-}
+};

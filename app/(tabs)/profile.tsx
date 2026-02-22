@@ -2,7 +2,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native'; // Tambah Image
 
 export default function ProfileScreen() {
   const { userData, logout } = useAuth();
@@ -38,10 +38,22 @@ export default function ProfileScreen() {
     <ScrollView className="flex-1 bg-gray-50">
       {/* Header Profile */}
       <View className="bg-white pb-8 pt-16 rounded-b-[40px] shadow-sm items-center mb-6">
-        <View className="w-24 h-24 bg-gray-200 rounded-full items-center justify-center mb-4 border-4 border-white shadow-md">
-          <Feather name="user" size={40} color="#9ca3af" />
+        
+        {/* --- UPDATE: TAMPILKAN FOTO PROFIL --- */}
+        <View className="mb-4 shadow-md relative">
+          {userData?.image ? (
+            <Image 
+              source={{ uri: userData.image }} 
+              className="w-24 h-24 rounded-full border-4 border-white bg-gray-200"
+            />
+          ) : (
+            <View className="w-24 h-24 bg-gray-100 rounded-full items-center justify-center border-4 border-white">
+               <Feather name="user" size={40} color="#9ca3af" />
+            </View>
+          )}
         </View>
-        <Text className="text-2xl font-bold text-gray-800">{userData?.name}</Text>
+
+        <Text className="text-2xl font-bold text-gray-800">{userData?.name || 'User'}</Text>
         <Text className="text-gray-500">{userData?.email}</Text>
         
         <View className={`mt-3 px-4 py-1 rounded-full ${userData?.role === 'admin' ? 'bg-red-100' : 'bg-blue-100'}`}>
@@ -61,7 +73,12 @@ export default function ProfileScreen() {
 
       {/* Action Buttons */}
       <View className="px-6 pb-20 space-y-3">
-        <TouchableOpacity className="flex-row items-center justify-between bg-white p-4 rounded-xl border border-gray-100">
+        
+        {/* --- UPDATE: NAVIGASI KE EDIT PROFILE --- */}
+        <TouchableOpacity 
+          onPress={() => router.push('/edit-profile')} // <--- TAMBAHAN DI SINI
+          className="flex-row items-center justify-between bg-white p-4 rounded-xl border border-gray-100 mb-3"
+        >
           <View className="flex-row items-center">
             <Feather name="edit-3" size={20} color="#4b5563" className="mr-3" />
             <Text className="text-gray-700 font-medium ml-3">Edit Profil</Text>

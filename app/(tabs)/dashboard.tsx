@@ -1,14 +1,13 @@
 import { useAuth } from '@/lib/auth-context';
 import { UserRole } from '@/lib/auth-utils';
-import { getProducts, Product } from '@/lib/product-service';
 import { Feather } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import React, { useEffect } from 'react';
+// --- FIX: Tambahkan BackHandler ke import ---
+import { Alert, BackHandler, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 
 // Import Components
 import { DashboardGridItem } from '../components/dashboard/DashboardGridItem';
-import { ProductCard } from '../components/ui/ProductCard';
 
 // --- Tipe Data ---
 type IconName = keyof typeof Feather.glyphMap;
@@ -16,7 +15,7 @@ type IconName = keyof typeof Feather.glyphMap;
 interface MenuItem {
   title: string;
   icon: IconName;
-  route?: string; // Property untuk navigasi
+  route?: string;
 }
 
 interface DashboardConfig {
@@ -28,7 +27,7 @@ interface DashboardConfig {
   menuItems: MenuItem[];
 }
 
-// --- Konfigurasi Menu (UPDATE DISINI) ---
+// --- Konfigurasi Menu ---
 const ROLE_CONFIG: Record<UserRole, DashboardConfig> = {
   admin: {
     greeting: 'Admin Panel',
@@ -37,73 +36,93 @@ const ROLE_CONFIG: Record<UserRole, DashboardConfig> = {
     bgLight: 'bg-red-50',
     headerIcon: 'shield',
     menuItems: [
-      { title: 'Analytics', icon: 'bar-chart-2' },
-      { title: 'Users', icon: 'users' },
-      // TOMBOL INI YANG KITA UPDATE:
-      { 
-        title: 'Produk',        // Judul Button
-        icon: 'package',        // Icon Kotak
-        route: '/add-product'   // <--- Arahkan ke halaman tambah produk
-      }, 
+      { title: 'Analytics', icon: 'bar-chart-2', route: '/sales-map' },
+      { title: 'Users', icon: 'users', route: '/manage-users' },
+      { title: 'Produk', icon: 'package', route: '/product-list' },
       { title: 'Sistem', icon: 'settings' },
+      { title: 'Laporan', icon: 'file-text', route: '/reports' },
     ]
   },
   user: {
-    greeting: 'Mau minum apa?',
+    greeting: 'Siap Berdagang?',
     themeColor: '#2563eb',
     primaryColor: 'text-blue-600',
     bgLight: 'bg-blue-50',
-    headerIcon: 'smile',
-    menuItems: []
+    headerIcon: 'truck',
+    menuItems: [
+      { title: 'Persiapan', icon: 'clipboard', route: '/preparation' },
+      { title: 'Mulai Jualan', icon: 'map-pin', route: '/start-selling' },
+      { title: 'Top Penjualan', icon: 'award', route: '/leaderboard' },
+      { title: 'Riwayat', icon: 'clock' },
+    ]
   }
 };
 
 export default function DashboardScreen() {
   const { userData, loading: authLoading, logout } = useAuth();
   const router = useRouter();
-  
-  // State untuk Data Produk (User View)
-  const [products, setProducts] = useState<Product[]>([]);
-  const [productLoading, setProductLoading] = useState(false);
 
+  // Kita ambil role & config saat ini
   const currentRole = userData?.role || 'user';
   const config = ROLE_CONFIG[currentRole];
 
-  // Logic: Fetch Data Produk (Hanya berjalan jika User)
-  useFocusEffect(
-    useCallback(() => {
-      if (currentRole === 'user') {
-        const fetchProducts = async () => {
-          setProductLoading(true);
-          const data = await getProducts();
-          setProducts(data);
-          setProductLoading(false);
-        };
-        fetchProducts();
-      }
-    }, [currentRole])
-  );
-
-  // Logic: Navigasi Menu Grid (Admin)
+  // Logic: Navigasi Menu Grid
   const handleMenuPress = (route?: string) => {
     if (route) {
-      router.push(route as any); // Pindah halaman sesuai route
+      router.push(route as any);
     } else {
       Alert.alert('Info', 'Fitur ini belum tersedia');
     }
   };
 
-  const handleLogout = async () => {
+  // --- FUNGSI EKSEKUSI LOGOUT (Dipisahkan agar bisa dipanggil BackHandler & Tombol) ---
+  const performLogout = async () => {
+    await logout();
+    router.replace('/(auth)/login');
+  };
+
+  // --- TRIGGER TOMBOL LOGOUT (UI) ---
+  const handleLogoutPress = () => {
     Alert.alert('Konfirmasi', 'Keluar aplikasi?', [
       { text: 'Batal', style: 'cancel' },
-      { text: 'Keluar', style: 'destructive', onPress: async () => {
-        await logout();
-        router.replace('/(auth)/login');
-      }}
+      { text: 'Keluar', style: 'destructive', onPress: performLogout }
     ]);
   };
 
+  // --- HANDLE TOMBOL BACK ANDROID ---
+  useEffect(() => {
+    const backAction = () => {
+      Alert.alert(
+        "Konfirmasi Keluar",
+        "Apakah Anda yakin ingin logout dan keluar dari akun?",
+        [
+          {
+            text: "Batal",
+            onPress: () => null,
+            style: "cancel"
+          },
+          {
+            text: "Ya, Keluar",
+            onPress: performLogout, // Panggil fungsi eksekusi langsung
+            style: "destructive"
+          }
+        ]
+      );
+      return true; // Mencegah aplikasi langsung keluar (default behavior)
+    };
+
+    const backHandler = BackHandler.addEventListener(
+      "hardwareBackPress",
+      backAction
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+  // --- FIX: Loading Check diletakkan di awal ---
   if (authLoading) return <View className="flex-1 bg-white" />;
+
+  // --- FIX: HAPUS return (<View><Text>Halaman Utama...</Text></View>) yang memblokir UI ---
 
   return (
     <ScrollView className="flex-1 bg-gray-50" showsVerticalScrollIndicator={false}>
@@ -113,11 +132,24 @@ export default function DashboardScreen() {
         <View className="flex-row justify-between items-center mb-4">
           <View>
             <Text className="text-gray-400 font-medium text-sm">{config.greeting}</Text>
-            <Text className={`text-2xl font-extrabold ${config.primaryColor}`}>
-              {userData?.name}
-            </Text>
+            
+            {/* Nama User & Edit Profile */}
+            <TouchableOpacity 
+              onPress={() => router.push('/edit-profile')} 
+              activeOpacity={0.7}
+              className="flex-row items-center mt-1"
+            >
+              <Text className={`text-2xl font-extrabold mr-2 ${config.primaryColor}`}>
+                {userData?.name || userData?.email || 'User'}
+              </Text>
+              <View className="bg-gray-100 p-1.5 rounded-full">
+                <Feather name="edit-2" size={14} color="#9ca3af" />
+              </View>
+            </TouchableOpacity>
+
           </View>
-          <TouchableOpacity onPress={handleLogout}>
+          
+          <TouchableOpacity onPress={handleLogoutPress}>
              <Feather name="log-out" size={20} color={config.themeColor} />
           </TouchableOpacity>
         </View>
@@ -125,59 +157,32 @@ export default function DashboardScreen() {
         {/* Banner Status */}
         <View className={`p-4 rounded-xl ${currentRole === 'admin' ? 'bg-red-600' : 'bg-blue-600'}`}>
            <Text className="text-white font-bold text-lg">
-             {currentRole === 'admin' ? 'Status Sistem Aman' : 'Promo Hari Ini!'}
+             {currentRole === 'admin' ? 'Status Sistem Aman' : 'Mode Pedagang Aktif'}
            </Text>
            <Text className="text-white/80 text-xs">
-             {currentRole === 'admin' ? 'Semua layanan berjalan normal.' : 'Diskon spesial untukmu.'}
+             {currentRole === 'admin' ? 'Semua layanan berjalan normal.' : 'Jangan lupa cek stok sebelum berangkat.'}
            </Text>
         </View>
       </View>
 
-      {/* CONTENT AREA */}
+      {/* CONTENT AREA (GRID MENU UNTUK SEMUA ROLE) */}
       <View className="px-6 pb-20">
         
-        {/* TAMPILAN ADMIN: GRID BUTTONS */}
-        {currentRole === 'admin' && (
-          <>
-            <Text className="text-lg font-bold text-gray-800 mb-4">Fitur Utama</Text>
-            <View className="flex-row flex-wrap justify-between">
-              {config.menuItems.map((item, index) => (
-                <DashboardGridItem
-                  key={index}
-                  title={item.title}
-                  icon={item.icon}
-                  themeColor={config.themeColor}
-                  bgAccent={config.bgLight}
-                  onPress={() => handleMenuPress(item.route)}
-                />
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* TAMPILAN USER: LIST PRODUK */}
-        {currentRole === 'user' && (
-          <>
-            <Text className="text-lg font-bold text-gray-800 mb-4">Menu Minuman</Text>
-            
-            {productLoading ? (
-              <ActivityIndicator size="large" color="#2563eb" />
-            ) : products.length === 0 ? (
-              <View className="items-center py-10">
-                <Feather name="coffee" size={40} color="#ccc" />
-                <Text className="text-gray-400 mt-2">Belum ada menu tersedia</Text>
-              </View>
-            ) : (
-              products.map((item) => (
-                <ProductCard 
-                  key={item.id} 
-                  item={item} 
-                  onPress={() => Alert.alert('Order', `Pesan ${item.name}?`)}
-                />
-              ))
-            )}
-          </>
-        )}
+        <Text className="text-lg font-bold text-gray-800 mb-4">Menu Utama</Text>
+        
+        {/* Render Grid Items sesuai Config Role */}
+        <View className="flex-row flex-wrap justify-between">
+          {config.menuItems.map((item, index) => (
+            <DashboardGridItem
+              key={index}
+              title={item.title}
+              icon={item.icon}
+              themeColor={config.themeColor}
+              bgAccent={config.bgLight}
+              onPress={() => handleMenuPress(item.route)}
+            />
+          ))}
+        </View>
 
       </View>
     </ScrollView>

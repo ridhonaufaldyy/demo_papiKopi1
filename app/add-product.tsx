@@ -1,19 +1,20 @@
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; // Import Image Picker
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import * as ImagePicker from 'expo-image-picker';
+import { useLocalSearchParams, useRouter } from 'expo-router'; // 1. Import useLocalSearchParams
+import React, { useEffect, useState } from 'react'; // 2. Import useEffect
 import {
-    Alert,
-    FlatList,
-    Image,
-    Modal,
-    ScrollView,
-    Text,
-    TouchableOpacity,
-    View
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
-import { addProduct, uploadImage } from '@/lib/product-service';
+// Import fungsi updateProduct juga
+import { addProduct, updateProduct, uploadImage } from '@/lib/product-service';
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 
@@ -27,38 +28,61 @@ const CATEGORIES = [
 
 export default function AddProductScreen() {
   const router = useRouter();
+  
+  // 3. Ambil parameter dari navigasi
+  const params = useLocalSearchParams();
+  const { id, editMode, productData } = params;
+  const isEditing = editMode === 'true';
+
   const [loading, setLoading] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false); // State untuk Dropdown
+  const [modalVisible, setModalVisible] = useState(false);
   
   const [form, setForm] = useState({
     name: '',
     price: '',
     category: '',
-    image: null as string | null, // Ubah jadi null defaultnya
+    image: null as string | null,
   });
 
-  
+  // --- 4. useEffect: Isi Form jika Mode Edit ---
+  useEffect(() => {
+    if (isEditing && productData) {
+      try {
+        const data = JSON.parse(productData as string);
+        setForm({
+          name: data.name,
+          price: data.price.toString(), // Ubah angka ke string untuk Input
+          category: data.category,
+          image: data.image, // URL gambar lama
+        });
+        
+        // Update judul halaman navigasi (Opsional)
+        router.setParams({ title: 'Edit Produk' });
+      } catch (error) {
+        console.error("Gagal parsing data produk", error);
+      }
+    }
+  }, [editMode, productData]);
 
-  // --- 1. Fungsi Ganti Input Text ---
+  // Fungsi Ganti Input Text
   const handleChange = (key: string, value: string) => {
     setForm(prev => ({ ...prev, [key]: value }));
   };
 
-  // --- 2. Fungsi Pilih Gambar dari Galeri ---
+  // Fungsi Pilih Gambar
   const pickImage = async () => {
-    // Meminta izin akses galeri
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
     if (permissionResult.granted === false) {
-      Alert.alert("Izin Ditolak", "Anda perlu mengizinkan akses kamera/galeri.");
+      Alert.alert("Izin Ditolak", "Anda perlu mengizinkan akses galeri.");
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, // Bisa crop
-      aspect: [1, 1],      // Rasio kotak
-      quality: 0.5,        // Kompres sedikit agar tidak terlalu besar
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
     });
 
     if (!result.canceled) {
@@ -66,11 +90,11 @@ export default function AddProductScreen() {
     }
   };
 
-  // --- 3. Fungsi Simpan (Dengan Logika Upload) ---
-const handleSave = async () => {
-    // 1. Validasi
+  // --- 5. Logika Simpan (Cerdas) ---
+  const handleSave = async () => {
+    // Validasi Dasar
     if (!form.name || !form.price || !form.category) {
-      return Alert.alert('Validasi', 'Data wajib diisi semua');
+      return Alert.alert('Validasi', 'Nama, Harga, dan Kategori wajib diisi');
     }
     if (!form.image) {
       return Alert.alert('Validasi', 'Gambar wajib dipilih');
@@ -78,26 +102,40 @@ const handleSave = async () => {
 
     try {
       setLoading(true);
+      let finalImageUrl = form.image;
 
-      // 2. PROSES UPLOAD GAMBAR DULU
-      // Mengubah file lokal (file://) menjadi URL Online (https://)
-      const onlineImageUrl = await uploadImage(form.image);
+      // LOGIKA SMART UPLOAD:
+      // Kita hanya upload ke Cloudinary jika gambarnya berasal dari galeri HP (file://...)
+      // Jika gambarnya masih link lama (https://...), berarti user tidak ganti gambar.
+      const isLocalFile = form.image.startsWith('file://');
+      
+      if (isLocalFile) {
+        finalImageUrl = await uploadImage(form.image);
+      }
 
-      // 3. SIMPAN DATA KE DATABASE
-      // Simpan URL onlinenya, bukan URI lokalnya
-      await addProduct({
+      const payload = {
         name: form.name,
         category: form.category,
-        image: onlineImageUrl, // <--- Pakai URL dari Firebase Storage
+        image: finalImageUrl,
         price: parseInt(form.price),
-      });
+      };
+
+      if (isEditing) {
+        // --- MODE EDIT: Update Data ---
+        if (!id) throw new Error("ID Produk hilang");
+        await updateProduct(id as string, payload);
+        Alert.alert('Sukses', 'Produk berhasil diperbarui!');
+      } else {
+        // --- MODE TAMBAH: Buat Baru ---
+        await addProduct(payload);
+        Alert.alert('Sukses', 'Produk berhasil ditambahkan!');
+      }
       
-      Alert.alert('Sukses', 'Produk berhasil ditambahkan!');
       router.back();
       
     } catch (error) {
       console.error(error);
-      Alert.alert('Error', 'Gagal menyimpan produk');
+      Alert.alert('Error', 'Gagal menyimpan data');
     } finally {
       setLoading(false);
     }
@@ -105,7 +143,7 @@ const handleSave = async () => {
 
   return (
     <ScrollView className="flex-1 bg-white">
-      {/* Header */}
+      {/* Header Dinamis */}
       <View className="px-6 pt-14 pb-4 border-b border-gray-100 flex-row items-center bg-white">
         <Feather 
           name="arrow-left" 
@@ -113,12 +151,14 @@ const handleSave = async () => {
           color="#1f2937" 
           onPress={() => router.back()} 
         />
-        <Text className="text-xl font-bold ml-4 text-gray-800">Tambah Produk</Text>
+        <Text className="text-xl font-bold ml-4 text-gray-800">
+          {isEditing ? 'Edit Produk' : 'Tambah Produk'}
+        </Text>
       </View>
 
       <View className="p-6">
         
-        {/* --- UPLOAD GAMBAR AREA --- */}
+        {/* Upload Gambar Area */}
         <View className="items-center mb-6">
           <TouchableOpacity onPress={pickImage} activeOpacity={0.8}>
             {form.image ? (
@@ -154,7 +194,7 @@ const handleSave = async () => {
           onChangeText={(t) => handleChange('price', t)}
         />
 
-        {/* --- CUSTOM DROPDOWN (KATEGORI) --- */}
+        {/* Custom Dropdown */}
         <View className="mb-4">
           <Text className="text-gray-700 font-semibold mb-2">Kategori</Text>
           <TouchableOpacity
@@ -168,15 +208,16 @@ const handleSave = async () => {
           </TouchableOpacity>
         </View>
 
+        {/* Tombol Simpan Dinamis */}
         <Button 
-          title="Simpan Produk" 
+          title={isEditing ? "Simpan Perubahan" : "Simpan Produk"}
           onPress={handleSave} 
           loading={loading}
           className="mt-6 bg-red-600"
         />
       </View>
 
-      {/* --- MODAL UNTUK PILIHAN KATEGORI --- */}
+      {/* Modal Kategori */}
       <Modal
         animationType="slide"
         transparent={true}

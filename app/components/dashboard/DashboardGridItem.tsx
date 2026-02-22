@@ -2,13 +2,12 @@ import { Feather } from '@expo/vector-icons';
 import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 
-// Definisikan tipe props agar TypeScript senang
 interface DashboardGridItemProps {
   title: string;
-  icon: keyof typeof Feather.glyphMap; // Validasi nama icon otomatis
+  icon: keyof typeof Feather.glyphMap;
   onPress?: () => void;
-  themeColor: string;   // Warna Icon (Hex code)
-  bgAccent: string;     // Class background bulat (misal: 'bg-red-50')
+  themeColor: string;
+  bgAccent: string;
 }
 
 export const DashboardGridItem = ({
@@ -22,19 +21,24 @@ export const DashboardGridItem = ({
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.7}
-      // Style Container: w-[48%] agar muat 2 kolom
-      className="w-[48%] bg-white p-5 rounded-2xl mb-4 shadow-sm border border-gray-100 items-center justify-center"
-      style={{ elevation: 2 }} // Shadow khusus Android
+      // --- PERUBAHAN GAYA ---
+      // 1. w-[47%]: Agar muat 2 kolom dengan spasi di tengah
+      // 2. aspect-square: Agar bentuknya kotak persegi (seperti aplikasi HP pada umumnya)
+      // 3. justify-center & items-center: Konten di tengah
+      // 4. flex-col: Susunan vertikal (Icon atas, Teks bawah)
+      className="w-[47%] aspect-square bg-white rounded-3xl mb-5 shadow-sm border border-gray-100 items-center justify-center"
+      style={{ elevation: 3 }} // Shadow sedikit lebih tebal agar timbul
     >
-      {/* Icon Circle Container */}
+      {/* Icon Container */}
+      {/* Kita buat circle sedikit lebih besar agar terlihat 'clean' */}
       <View 
-        className={`w-14 h-14 rounded-full ${bgAccent} items-center justify-center mb-3`}
+        className={`w-16 h-16 rounded-full ${bgAccent} items-center justify-center mb-4`}
       >
-        <Feather name={icon} size={24} color={themeColor} />
+        <Feather name={icon} size={28} color={themeColor} />
       </View>
       
       {/* Title */}
-      <Text className="text-gray-700 font-semibold text-center text-sm">
+      <Text className="text-gray-700 font-bold text-center text-sm px-2">
         {title}
       </Text>
     </TouchableOpacity>
